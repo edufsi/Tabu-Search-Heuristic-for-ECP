@@ -1,0 +1,4 @@
+NO WINDOWS E VS CODE
+1) Vá até a pasta build
+2) Rode cmake ..
+3) Rode cmake --build . --config Release
