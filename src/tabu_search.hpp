@@ -25,10 +25,11 @@
 
 struct TabuConfig {
     int max_iter = 10000;
-    int fixed_tenure = -1; // Se >= 0, usa fixo
     double alpha = 0.6;
     int beta = 10;
     int perturbation_limit = 1000; // iterações sem melhora para perturbar
+    double perturbation_strength = 0.16; // percentagem de n vértices a perturbar
+    int aspiration = 1; // 0 = off, 1 = on
 };
 
 
@@ -38,6 +39,11 @@ struct CandidateMove {
     int target; // u ou cor
 };
 
+struct TabuResult {
+    bool solved;           // Se chegou a custo 0
+    int iterations;        // Quantas iterações rodou
+    long long final_obj;   // Valor da Solução Final (SF)
+};
 
 namespace tabueqcol {
 
@@ -629,10 +635,20 @@ struct SolutionManager {
     // CORE DO TABU SEARCH
     // ==============================================================
 
-    bool run_tabu_search(const TabuConfig& config, const StopCriterion& stop, int seed = 0) {
-        if (obj == 0) return true; // Já viável
+    TabuResult run_tabu_search(const TabuConfig& config, const StopCriterion& stop, int seed = 0) {
 
-        printf("Starting Tabu Search: initial obj = %lld, conflicting vertices = %zu\n", obj, conflictingVertices.size());
+        TabuResult result;
+        result.solved = false;
+        result.final_obj = obj;
+        result.iterations = 0;
+
+
+        if (obj == 0){
+            result.solved = true;
+            return result;
+        } // Já está ótimo
+
+
         init_tabu();
         std::mt19937 rng(seed);
         int best_obj_found = obj;
@@ -647,7 +663,7 @@ struct SolutionManager {
 
         while (iter < config.max_iter && obj > 0) {
             if(iter % 128 == 0 && stop.is_time_up())
-                return false;
+                return result;
             
             int best_delta = 99999999;
             int move_type = -1; // 0: Move, 1: Swap
@@ -661,12 +677,12 @@ struct SolutionManager {
             // Movemos v de W+ para W-
 
             // Critério de perturbação simples: se nenhuma melhoria em X iterações, executa 
-            if (no_improve_iter >= config.perturbation_limit) {
+            if (no_improve_iter >= config.perturbation_limit && config.perturbation_strength > 0) {
                 //printf("Perturbing solution at iter %d (stuck for %d iter)...\n", iter, no_improve_iter);
                 
                 // Executa, por exemplo, n/2 swaps totalmente aleatórios
                 // Isso vai estragar o obj momentaneamente, mas tira do buraco
-                for (int p = 0; p < n/2; ++p) {
+                for (int p = 0; p < n * config.perturbation_strength; ++p) {
                     std::uniform_int_distribution<int> d_n(0, n-1);
                     int v1 = d_n(rng);
                     int v2 = d_n(rng);
@@ -703,7 +719,7 @@ struct SolutionManager {
                                 // Aspiration Check
                                 bool aspiration = (obj + delta < best_obj_found);
                                 
-                                if (!is_tabu || aspiration) {
+                                if (!is_tabu || (aspiration && config.aspiration)) {
 
 
                                     if (delta < best_delta) {
@@ -802,15 +818,13 @@ struct SolutionManager {
             if (move_type != -1) {
                 // Calcular Tenure
                 int tenure;
-                if (config.fixed_tenure >= 0) {
-                    tenure = config.fixed_tenure;
-                } else {
-                    // alpha * |C(s)| + random(beta)
-                    std::uniform_int_distribution<int> dist(0, config.beta);
-                    //printf("Config.beta = %d\n", config.beta);
-                    tenure = (int)(config.alpha * conflictingVertices.size()) + dist(rng);
-                    //printf("%d\n", dist(rng));
-                }
+
+                // alpha * |C(s)| + random(beta)
+                std::uniform_int_distribution<int> dist(0, config.beta);
+                //printf("Config.beta = %d\n", config.beta);
+                tenure = (int)(config.alpha * conflictingVertices.size()) + dist(rng);
+                //printf("%d\n", dist(rng));
+                
 
 
                 if (move_type == 0) {
@@ -855,12 +869,13 @@ struct SolutionManager {
 
             iter++;
     }
-
-        printf("Tabu Search ended: best obj found = %d\n", best_obj_found);
-        printf("Number of iterations: %d\n", iter);
         
+        result.iterations = iter;
+        result.final_obj = best_obj_found;
+        result.solved = (best_obj_found == 0);
 
-        return (obj == 0);
+        return result;
+
     }
 
 }; // end SolutionManager

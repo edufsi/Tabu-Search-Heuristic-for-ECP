@@ -19,8 +19,9 @@ Arguments parse_arguments(int argc, char** argv) {
 
     Arguments args;
 
-    args.input_file = argv[1];
-    args.output_file = argv[2];
+    args.output_file = argv[1];
+    args.input_file = argv[2];
+    
 
     for (int i = 3; i < argc; i++) {
         auto eq = [&](const char* s){ return strcmp(argv[i], s) == 0; };
@@ -37,13 +38,7 @@ Arguments parse_arguments(int argc, char** argv) {
             expect_value(i, argc, "--beta");
             args.beta = std::stod(argv[++i]);
         }
-        else if (eq("--tenure")) {
-            expect_value(i, argc, "--tenure");
-            args.tenure_type = argv[++i];
-            if (args.tenure_type != "fixed" && args.tenure_type != "randomized") {
-                throw std::runtime_error("Invalid value for --tenure (use 'fixed' or 'randomized')");
-            }
-        }
+
         else if (eq("--aspiration")) {
             expect_value(i, argc, "--aspiration");
             args.aspiration = std::stoi(argv[++i]);
@@ -62,6 +57,10 @@ Arguments parse_arguments(int argc, char** argv) {
         else if (eq("--perturbation_limit")) {
             expect_value(i, argc, "--perturbation_limit");
             args.perturbation_limit = std::stoi(argv[++i]);
+        }
+        else if (eq("--perturbation_strength")) {
+            expect_value(i, argc, "--perturbation_strength");
+            args.perturbation_strength = std::stof(argv[++i]);
         }
         else {
             throw std::runtime_error(std::string("Unknown argument: ") + argv[i]);

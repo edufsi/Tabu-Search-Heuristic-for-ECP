@@ -17,107 +17,125 @@ using namespace std;
 
 static void die(const string &msg);
 tabueqcol::Instance read_instance(const string &path);
-int compute_conflicts(const tabueqcol::Instance &inst, const vector<int> &color);
-vector<int> color_sizes(const vector<int> &color, int K);
 
 
 
-
+#include <fstream>  // Necessário para arquivos
+#include <iomanip>  // Necessário para formatação
 
 int main(int argc, char** argv) {
     try {
         Arguments args = parse_arguments(argc, argv);
 
-        std::cout << "Input:  " << args.input_file << "\n";
-        std::cout << "Output: " << args.output_file << "\n";
-        std::cout << "seed = " << args.seed << "\n";
-        std::cout << "alpha = " << args.alpha << "\n";
-        std::cout << "beta = " << args.beta << "\n";
-        std::cout << "tenure = " << args.tenure_type << "\n";
-        std::cout << "aspiration = " << args.aspiration << "\n";
-        std::cout << "time_limit = " << args.time_limit << "s\n";
-        std::cout << "max_iter = " << args.max_iter << "\n";
-
+        // --- LEITURA DA INSTÂNCIA ---
+        // printf("Lendo instancia: %s\n", args.input_file.c_str());
         const tabueqcol::Instance inst = read_instance(args.input_file);
-        printf("Instancia lida: %d vertices, %d arestas, grau max %d\n", inst.n, (int)inst.edges.size(), inst.max_degree);
         
+        // --- CONFIGURAÇÃO ---
         StopCriterion globalStop(args.time_limit);
         
         TabuConfig tabuConfig;
-        tabuConfig.max_iter = args.max_iter; // Iterações máximas PER K (para não ficar preso infinitamente)
-        tabuConfig.fixed_tenure = -1; // Tenure dinâmico
+        tabuConfig.max_iter = args.max_iter;
         tabuConfig.alpha = args.alpha;
         tabuConfig.beta = (int)args.beta;
         tabuConfig.perturbation_limit = args.perturbation_limit;
+        tabuConfig.aspiration = args.aspiration;
 
-        printf("Stop Criterion e Tabu Config Inicializados!\n");
+        printf("Alpha: %.2f | Beta: %d | P_Limit: %d | Asp: %d\n", tabuConfig.alpha, tabuConfig.beta, tabuConfig.perturbation_limit, tabuConfig.aspiration);
 
-        // 1. Inicializa com K seguro (Hajnal-Szemerédi)
-        tabueqcol::SolutionManager currentS(inst, -1); // Usa max_degree + 1
+        // --- CONSTRUÇÃO INICIAL (SI) ---
+        // printf("Gerando solucao inicial...\n");
+        tabueqcol::SolutionManager currentS(inst, -1); 
         currentS.construct_greedy_initial(args.seed);
 
-        printf("Solução inicial construída.\n");
+        // Variáveis para Estatísticas
+        int initial_k = currentS.k;
+        long long total_iterations = 0;
 
-        // Como começamos com max_degree+1, a inicial já é viável ou muito fácil de resolver
+        // Melhor Solução (SF)
         tabueqcol::SolutionManager bestFeasibleS = currentS; 
         int best_k_found = currentS.k;
 
-        printf("Iniciando com K=%d. Tempo max: %.2fs\n", currentS.k, args.time_limit);
+        // printf("Iniciando busca. K_ini=%d. TimeLimit=%.2fs\n", initial_k, args.time_limit);
 
+        // --- LOOP DE DESCIDA (Descent Method) ---
         while (!globalStop.is_time_up()) {
             
-            // Tenta resolver para o K atual
-            bool solved = currentS.run_tabu_search(tabuConfig, globalStop, args.seed);
+            auto result = currentS.run_tabu_search(tabuConfig, globalStop, args.seed);
+            total_iterations += result.iterations;
 
-            if (solved) {
-                // SUCCESSO!
-                printf("[%.2fs] K=%d resolvido! Iteracoes: %d\n", globalStop.get_elapsed(), currentS.k, tabuConfig.max_iter);
+            if (result.solved) {
+                // Sucesso: Salva e tenta K-1
+                // printf("  [%.2fs] K=%d resolvido (%d iter)\n", globalStop.get_elapsed(), currentS.k, result.iterations);
                 
-                // 1. Salva essa como a melhor
-                bestFeasibleS = currentS; // Cópia completa do estado
+                bestFeasibleS = currentS; 
                 best_k_found = currentS.k;
 
-                // 2. Tenta reduzir K
-                if (best_k_found == 1) break; // Impossível reduzir mais
+                if (best_k_found == 1) break; // Limite teórico
 
                 int next_k = best_k_found - 1;
-                
-                // 3. Prepara próxima iteração: Cria novo gerenciador e usa "From Previous"
                 tabueqcol::SolutionManager nextS(inst, next_k);
                 nextS.construct_greedy_from_previous(bestFeasibleS, args.seed);
-                
-                // 4. Atualiza currentS para o próximo loop
-                currentS = nextS; // nextS pode ter conflitos iniciais, o Tabu vai tentar zerar
-
+                currentS = nextS; 
             } else {
-                // FALHA
-                // Se saiu do run_tabu_search retornando false, pode ser por dois motivos:
-                // A) Acabou o tempo global.
-                // B) Atingiu max_iter local sem convergir (mínimo local difícil).
-                
-                if (globalStop.is_time_up()) {
-                    printf("[TIMEOUT] Tempo esgotado tentando resolver K=%d.\n", currentS.k);
-                } else {
-                    printf("[LIMIT] Nao convergiu para K=%d apos %d iteracoes.\n", currentS.k, tabuConfig.max_iter);
-                }
-                
-                // Em ambos os casos, não conseguimos provar viabilidade para este K.
-                // Paramos a busca e reportamos o último K que funcionou.
+                // Falha: Para a busca
+                // printf("  [STOP] Falha em K=%d\n", currentS.k);
                 break;
             }
         }
 
-        // RESULTADO FINAL
-        printf("\n=== RESULTADO FINAL ===\n");
-        printf("Melhor K Equitativo (Chi_eq): %d\n", best_k_found);
-        // Opcional: Validar bestFeasibleS novamente para ter certeza absoluta
+        // --- CÁLCULOS FINAIS ---
+        double dev_percent = 0.0;
+        if (initial_k > 0) {
+            dev_percent = 100.0 * (double)(initial_k - best_k_found) / (double)initial_k;
+        }
+        double total_time = globalStop.get_elapsed();
+
+        // --- GRAVAÇÃO CSV ---
+        // Abre em modo APPEND para não sobrescrever testes anteriores
+        std::ofstream outfile(args.output_file, std::ios::app);
+        
+        if (outfile.is_open()) {
+            // Se arquivo for novo/vazio, escreve cabeçalho COMPLETO
+            // Incluindo os parâmetros do teste para análise posterior
+            outfile.seekp(0, std::ios::end);
+            if (outfile.tellp() == 0) {
+                outfile << "Instance;Seed;"
+                        << "Alpha;Beta;P_Limit;P_Str;Asp;" // Parâmetros do Teste
+                        << "SI;SF;Dev(%);Time(s);TotalIter\n"; // Resultados
+            }
+
+            // Escreve linha de dados
+            outfile << args.input_file << ";" 
+                    << args.seed << ";"
+                    // Parâmetros usados neste teste
+                    << tabuConfig.alpha << ";"
+                    << tabuConfig.beta << ";"
+                    << tabuConfig.perturbation_limit << ";"
+                    << tabuConfig.perturbation_strength << ";"
+                    << tabuConfig.aspiration << ";"
+                    // Resultados
+                    << initial_k << ";" 
+                    << best_k_found << ";" 
+                    << std::fixed << std::setprecision(2) << dev_percent << ";" 
+                    << std::fixed << std::setprecision(4) << total_time << ";" 
+                    << total_iterations << "\n";
+            
+            outfile.close();
+        } else {
+            std::cerr << "ERRO: Nao foi possivel escrever em " << args.output_file << "\n";
+            return 1;
+        }
+
+        // Output mínimo no console só para debug visual
+        printf("=== RESULTADO FINAL ===\n");
+        printf("FIM: %s | K %d->%d | Seed %d | Tempo %.4fs | Iterações %lld\n", args.input_file.c_str(), initial_k, best_k_found, args.seed, total_time, total_iterations);
 
     } catch (const std::exception& e) {
-        std::cerr << "Argument error: " << e.what() << "\n";
+        std::cerr << "Exception: " << e.what() << "\n";
         return 1;
     }
-
-
+    return 0;
 }
 
 
@@ -150,30 +168,6 @@ tabueqcol::Instance read_instance(const string &path){
 
     return I;
 }
-
-
-// compute conflicts: number of edges whose endpoints share same color
-int compute_conflicts(const tabueqcol::Instance &inst, const vector<int> &color){
-    int conflicts = 0;
-    for(auto &e: inst.edges){
-        if(color[e.first] == color[e.second]) ++conflicts;
-    }
-    return conflicts;
-}
-
-
-
-
-// sizes per color
-vector<int> color_sizes(const vector<int> &color, int K){
-    vector<int> sz(K,0);
-    for(int v=0; v<(int)color.size(); ++v){
-        int c = color[v];
-        if(c>=0 && c<K) ++sz[c];
-    }
-    return sz;
-}
-
 
 
 /*
