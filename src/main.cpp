@@ -40,6 +40,7 @@ int main(int argc, char** argv) {
         tabuConfig.beta = (int)args.beta;
         tabuConfig.perturbation_limit = args.perturbation_limit;
         tabuConfig.aspiration = args.aspiration;
+        tabuConfig.perturbation_strength = args.perturbation_strength;
 
         printf("Alpha: %.2f | Beta: %d | P_Limit: %d | Asp: %d\n", tabuConfig.alpha, tabuConfig.beta, tabuConfig.perturbation_limit, tabuConfig.aspiration);
 
@@ -51,7 +52,7 @@ int main(int argc, char** argv) {
         // Variáveis para Estatísticas
         int initial_k = currentS.k;
         long long total_iterations = 0;
-
+        
         // Melhor Solução (SF)
         tabueqcol::SolutionManager bestFeasibleS = currentS; 
         int best_k_found = currentS.k;
@@ -60,7 +61,10 @@ int main(int argc, char** argv) {
 
         // --- LOOP DE DESCIDA (Descent Method) ---
         while (!globalStop.is_time_up()) {
-            
+            long long remaining_iterations = args.max_iter - total_iterations;
+            if (remaining_iterations <= 0) break;
+
+            tabuConfig.max_iter = remaining_iterations;
             auto result = currentS.run_tabu_search(tabuConfig, globalStop, args.seed);
             total_iterations += result.iterations;
 

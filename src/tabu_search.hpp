@@ -693,7 +693,7 @@ struct SolutionManager {
                 
                 // Reseta o contador
                 no_improve_iter = 0;
-                
+                iter++;
                 // Opcional: Limpar a Tabu Matrix após perturbação para dar liberdade total
                 init_tabu();
                 

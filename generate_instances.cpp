@@ -90,18 +90,31 @@ int main() {
     // CONFIGURAÇÃO DOS CENÁRIOS DE CALIBRAÇÃO
     // ==========================================
     
+    std::mt19937 rng(seed);
+
+    // Gera uma série de 100 instâncias com entre 100 e 200 vértices, variando k entre 5 e 30 e com densidades variadas.
+    for (int i = 0; i < 100; ++i) {
+        int n = 100 + (i % 101); // 100 a 200
+        int k = 5 + (i % 26);    // 5 a 30
+        double density = 0.1 + ((i % 10) * 0.1); // 0.1 a 1.0
+        int seed = 2000 + i;
+        std::string filename = "calib_instance_" + std::to_string(i+1) + ".txt";
+        
+        generate_equitable_instance(n, k, density, seed, filename);
+    }
+
     // Cenário 1: Fácil (Esparso, muitas cores permitidas)
     // N=500, K=50 (Tamanho das classes = 10). Densidade 20%
-    generate_equitable_instance(500, 50, 0.2, 1001, "calib_easy.txt");
+    //generate_equitable_instance(500, 50, 0.2, 1001, "calib_easy.txt");
 
     // Cenário 2: Médio (Típico)
     // N=500, K=25 (Tamanho das classes = 20). Densidade 50%
-    generate_equitable_instance(500, 25, 0.5, 1002, "calib_medium.txt");
+   // generate_equitable_instance(500, 25, 0.5, 1002, "calib_medium.txt");
 
     // Cenário 3: Difícil (Denso, poucas cores = classes grandes e "apertadas")
     // N=500, K=10 (Tamanho das classes = 50). Densidade 60%
     // Aqui o Tabu Search vai sofrer para encontrar a combinação exata sem conflitos
-    generate_equitable_instance(500, 10, 0.6, 1003, "calib_hard.txt");
+    //generate_equitable_instance(500, 10, 0.6, 1003, "calib_hard.txt");
 
     return 0;
 }
